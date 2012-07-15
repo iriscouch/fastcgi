@@ -11,6 +11,7 @@
 
 , "dependencies": { "optimist": "~0.3.4"
                   , "defaultable": "~0.7.2"
+                  , "fastcgi-parser": "~0.1.4"
                   }
 
 , "devDependencies": { "tap": "~0.2.5"
