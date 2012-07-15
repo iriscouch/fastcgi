@@ -10,6 +10,7 @@
 , "bin": "./cli.js"
 
 , "dependencies": { "optimist": "~0.3.4"
+                  , "defaultable": "~0.7.2"
                   }
 
 , "devDependencies": { "tap": "~0.2.5"
