@@ -19,6 +19,7 @@ require('defaultable').def(module,
   }, function(module, exports, DEFS) {
 
 var net = require('net')
+var FCGI = require('fastcgi-parser')
 
 var LOG = DEFS.log
 
@@ -27,18 +28,42 @@ module.exports = { 'handler': handler
 
 
 // Connect to a FastCGI service and return an HTTP handler to forward requests to it.
-function handler(socket, callback) {
-  connect_fcgi(socket, 0, function(er, fcgid) {
+function handler(socket_path, callback) {
+  connect_fcgi(socket_path, 0, function(er, socket) {
     if(er)
       return callback(er)
 
-    return callback(null, http_req)
+    return callback(null, make_handler(socket))
   })
 }
 
-function http_req(req, res) {
-  res.writeHead(200, {'Content-Type': 'text/plain'});
-  res.end('Hello World\n');
+function make_handler(socket) {
+  var fcgid = new fastcgi_stream.FastCGIStream(socket)
+
+  fcgid.on('record', on_record)
+
+  var request_id = 0
+  return on_request
+
+  function on_request(req, res) {
+    request_id += 1
+
+    var record = new records.BeginRequest( records.BeginRequest.roles.RESPONDER
+                                         ,  records.BeginRequest.flags.KEEP_CONN
+                                         )
+
+    var result = fcgid.writeRecord(request_id, record) || null
+
+    res.writeHead(200, {'Content-Type': 'text/plain'});
+    res.end(JSON.stringify(result) + '\n');
+  }
+
+  function on_record(reqID, record) {
+    LOG.info('Got record %d: %j', reqID, record)
+
+    if(reqID == constants.NULL_REQUEST_ID)
+      return LOG.info('Management record')
+  }
 }
 
 function connect_fcgi(socket, attempts, callback) {
