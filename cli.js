@@ -2,7 +2,6 @@
 //
 // FastCGI web server
 
-var net = require('net')
 var util = require('util')
 var http = require('http')
 var optimist = require('optimist')
@@ -27,6 +26,9 @@ function main() {
   console.log('Run: %j %j', command, args)
   var child = child_process.spawn(command, args, options)
 
+  child.stderr.setEncoding('utf8')
+  child.stdout.setEncoding('utf8')
+
   child.stdout.on('data', function(data) {
     console.log('STDOUT: %j', data)
   })
@@ -46,40 +48,18 @@ function main() {
   httpd()
 }
 
-function httpd(attempts) {
+function httpd() {
   var host = '0.0.0.0'
     , port = ARGV.port
 
-  attempts = attempts || 0
-  if(attempts > 5)
-    throw new Error('Failed to connect to back-end socket')
+  fastcgi.handler(ARGV.socket, function(er, handler) {
+    if(er)
+      throw er
 
-  // Try to connect to the back-end socket.
-  var fcgid = net.connect({'path':ARGV.socket})
-
-  fcgid.on('error', function(er) {
-    if(er.code == 'ECONNREFUSED') {
-      var delay = 100 * Math.pow(2, attempts)
-      console.log('Waiting %d ms to connect', delay)
-      return setTimeout(function() { httpd(attempts+1) }, delay)
-    }
-
-    console.error('Unknown error on FastCGI connection: %s', er.message)
-    throw er
-  })
-
-  fcgid.on('connect', function(x) {
-    console.log('Connected to FastCGI daemon')
-
-    var server = http.createServer(on_req)
+    var server = http.createServer(handler)
     server.listen(port, host)
     console.log('HTTP on %s:%d', host, port)
   })
-
-  function on_req(req, res) {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
-    res.end('Hello World\n');
-  }
 }
 
 //
