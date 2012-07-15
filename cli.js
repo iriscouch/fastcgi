@@ -3,7 +3,6 @@
 // FastCGI web server
 
 var util = require('util')
-var http = require('http')
 var optimist = require('optimist')
 var child_process = require('child_process')
 
@@ -14,8 +13,6 @@ if(require.main === module)
   main(get_argv())
 
 function main() {
-  if(!ARGV._[0])
-    return usage()
   if(ARGV.help)
     return usage()
 
@@ -23,42 +20,35 @@ function main() {
     , args    = ARGV._.slice(1)
     , options = {}
 
-  console.log('Run: %j %j', command, args)
-  var child = child_process.spawn(command, args, options)
+  if(command) {
+    console.log('Run: %j %j', command, args)
+    var child = child_process.spawn(command, args, options)
 
-  child.stderr.setEncoding('utf8')
-  child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.setEncoding('utf8')
 
-  child.stdout.on('data', function(data) {
-    console.log('STDOUT: %j', data)
-  })
+    child.stdout.on('data', function(data) {
+      console.log('STDOUT: %j', data)
+    })
 
-  child.stderr.on('data', function(data) {
-    if (/^execvp\(\)/.test(data))
-      return console.error('Failed to start child process')
+    child.stderr.on('data', function(data) {
+      if (/^execvp\(\)/.test(data))
+        return console.error('Failed to start child process')
 
-    console.log('STDERR: %j', data)
-  })
+      console.log('STDERR: %j', data)
+    })
 
-  child.on('exit', function(code) {
-    console.log('Exit %j: %d', command, code)
-  })
+    child.on('exit', function(code) {
+      console.log('Exit %j: %d', command, code)
+    })
+  }
 
   // Now run the HTTP front-end.
-  httpd()
-}
-
-function httpd() {
-  var host = '0.0.0.0'
-    , port = ARGV.port
-
-  fastcgi.handler(ARGV.socket, function(er, handler) {
+  fastcgi.httpd(ARGV.port, '0.0.0.0', ARGV.socket, function(er) {
     if(er)
       throw er
 
-    var server = http.createServer(handler)
-    server.listen(port, host)
-    console.log('HTTP on %s:%d', host, port)
+    console.log('Listening on 0.0.0.0:%d', ARGV.port)
   })
 }
 
