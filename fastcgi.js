@@ -125,7 +125,7 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
   return on_request
 
   function on_request(req, res) {
-    LOG.info('Request: %j', req.url)
+    LOG.info('Request: %j %j', req.url, req.headers)
 
     request_id += 1
     requests[request_id] = { 'req': req
@@ -226,7 +226,9 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
 
   function on_data(data) {
     var parser = new FCGI.parser
-    parser.encoding = 'utf8'
+    parser.bodies = null
+    parser.encoding = 'binary'
+    parser.onBody   = on_body
     parser.onRecord = on_record
     parser.onError  = on_error
     parser.execute(data)
@@ -237,7 +239,23 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     throw er // TODO
   }
 
+  function on_body(data, start, end) {
+    data = data.slice(start, end)
+    this.bodies = this.bodies || []
+    this.bodies.push(data)
+  }
+
   function on_record(record) {
+    var parser = this
+
+    record.bodies = parser.bodies
+    parser.bodies = null
+    record.body_utf8 = function() {
+      return this.bodies
+                 .map(function(data) { return data.toString() })
+                 .join('')
+    }
+
     var req_id = record.header.recordId
     if(req_id == 0)
       return LOG.info('Ignoring management record: %j', record)
@@ -246,21 +264,23 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     if(!request)
       throw new Error('Record for unknown request: ' + req_id) // TODO
 
-    if(typeof record.body == 'object' && JSON.stringify(record.body) == '{}')
-      record.body = ''
-
     if(record.header.type == FCGI.constants.record.FCGI_STDERR)
-      return LOG.error('Error: %s', record.body.trim())
+      return LOG.error('Error: %s', record.body_utf8().trim())
 
     else if(record.header.type == FCGI.constants.record.FCGI_STDOUT) {
-      return send(request, record.body)
+      if(!record.bodies)
+        return
+
+      request.stdout = request.stdout.concat(record.bodies)
+      return send_stdout(request)
     }
 
-    else if(record.header.type == FCGI.constants.record.FCGI_END)
+    else if(record.header.type == FCGI.constants.record.FCGI_END) {
       return request.res.end()
+    }
 
     else {
-      LOG.info('Record: %j', record)
+      LOG.info('Unknown record: %j', record)
       Object.keys(FCGI.constants.record).forEach(function(type) {
         if(record.header.type == FCGI.constants.record[type])
           LOG.info('Unknown record type: %s', type)
@@ -268,19 +288,19 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     }
   }
 
-  function send(request, data) {
-    request.stdout.push(data)
-    data = request.stdout.join('')
-    request.stdout = []
-
+  function send_stdout(request) {
     if(!request.status) {
       // Still looking for the headers and status.
-      var parts = data.split(/\r?\n\r?\n/)
+      // TODO: I believe there is a bug here, if the headers aren't completely defined in the first data chunk.
+      // The problem is, I don't want to get a chunk that has utf8 headers, then two newlines, then binary body.
+      var parts = request.stdout[0].toString().split(/\r?\n\r?\n/)
       if(parts.length < 2)
-        return // Still waiting for all headers to arrive.
+        return LOG.warn('No complete headers in first stdout chunk') // Still waiting for all headers to arrive.
 
-      // Headers (and perhaps some body) have arrived.
-      var lines = parts[0].split(/\r?\n/)
+      // Headers have arrived. Convert the first stdout chunk into a .writeHead() and do not explicitly .write() it.
+      request.stdout = request.stdout.slice(1)
+      var headers_section = parts[0]
+      var lines = headers_section.split(/\r?\n/)
         , headers = {}
 
       lines.forEach(function(line) {
@@ -293,13 +313,11 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
           headers[key] = match[2]
       })
 
-      console.log('%d %j', request.status, headers)
       request.res.writeHead(request.status, headers)
-      data = parts.slice(1).join('\n')
     }
 
-    if(data.length) {
-      console.log('Write data: %j', data)
+    while(request.stdout.length > 0) {
+      var data = request.stdout.shift()
       request.res.write(data)
     }
   }
