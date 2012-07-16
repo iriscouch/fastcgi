@@ -322,14 +322,21 @@ function connect_fcgi(socket, attempts, callback) {
   }
 
   function on_error(er) {
-    if(er.code != 'ECONNREFUSED') {
-      LOG.error('Unknown error on FastCGI connection: %s', er.message)
+    if(er.code == 'ECONNREFUSED') {
+      var delay = 100 * Math.pow(2, attempts)
+      LOG.info('Waiting %d ms to connect', delay)
+      return setTimeout(function() { connect_fcgi(socket, attempts+1, callback) }, delay)
+    }
+
+    else if(er.code == 'ENOENT') {
+      LOG.error('Error: No such socket: %s', socket)
       return callback(er)
     }
 
-    var delay = 100 * Math.pow(2, attempts)
-    LOG.info('Waiting %d ms to connect', delay)
-    return setTimeout(function() { connect_fcgi(socket, attempts+1, callback) }, delay)
+    else {
+      LOG.error('Unknown error on FastCGI connection: %s', er.message)
+      return callback(er)
+    }
   }
 }
 
