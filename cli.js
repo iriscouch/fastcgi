@@ -20,7 +20,11 @@ function main() {
     , args    = ARGV._.slice(1)
     , options = {}
 
-  if(command) {
+  if(!command)
+    begin_http()
+  else {
+    var http_timer = setTimeout(begin_http, 250)
+
     console.log('Run: %j %j', command, args)
     var child = child_process.spawn(command, args, options)
 
@@ -39,17 +43,19 @@ function main() {
     })
 
     child.on('exit', function(code) {
+      clearTimeout(http_timer)
       console.log('Exit %j: %d', command, code)
     })
   }
 
-  // Now run the HTTP front-end.
-  fastcgi.httpd(ARGV.port, '0.0.0.0', ARGV.socket, function(er) {
-    if(er)
-      throw er
+  function begin_http() {
+    fastcgi.httpd(ARGV.port, '0.0.0.0', ARGV.socket, function(er) {
+      if(er)
+        throw er
 
-    console.log('Listening on 0.0.0.0:%d', ARGV.port)
-  })
+      console.log('Listening on 0.0.0.0:%d', ARGV.port)
+    })
+  }
 }
 
 //
