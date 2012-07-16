@@ -42,8 +42,10 @@ function httpd(port, host, socket_path, callback) {
       if(er)
         return callback(er)
 
+      values.FCGI_MPXS_CONNS = values.FCGI_MPXS_CONNS || 0
       LOG.info('FCGI values: %j', values)
-      var server = http.createServer(fcgi_handler(port, host, socket, socket_path))
+
+      var server = http.createServer(fcgi_handler(port, host, values, socket, socket_path))
       server.listen(port, host)
       return callback(null)
     })
@@ -102,8 +104,7 @@ function fcgi_get_values(socket, callback) {
       , keys = Object.keys(params)
 
     keys.forEach(function(key) {
-      var num_value = +params[key]
-      fcgi_values[key] = isNaN(num_value) ? params[key] : num_value
+      fcgi_values[key] = num_or_str(params[key])
     })
 
     if(keys.length == 0)
@@ -117,25 +118,46 @@ function fcgi_get_values(socket, callback) {
   }
 }
 
-function fcgi_handler(port, server_addr, socket, socket_path) {
-  var requests = {}
-    , request_id = 0
+function fcgi_handler(port, server_addr, features, socket, socket_path) {
+  var request_id = 0
+    , requests_in_flight = {}
+    , pending_requests = []
 
   prep_socket()
   return on_request
 
   function on_request(req, res) {
-    LOG.info('Request: %j %j', req.url, req.headers)
-
+    LOG.info('Request: %j', req.url)
     request_id += 1
-    requests[request_id] = { 'req': req
-                           , 'res':res
-                           , 'stdout': []
-                           , 'stderr': []
-                           }
+    var fcgi_request = { 'id': request_id
+                       , 'req': req
+                       , 'res':res
+                       , 'stdout': []
+                       , 'stderr': []
+                       , 'keepalive': FCGI.constants.keepalive.OFF
+                       }
+    pending_requests.push(fcgi_request)
+    process_request()
+  }
 
-    req.url = URL.parse(req.url)
-    var cgi = { 'PATH_INFO': req.url.pathname
+  function process_request() {
+    if(!socket)
+      return LOG.info('Postpone request until FastCGI is back up')
+
+    if(Object.keys(requests_in_flight).length && features.FCGI_MPXS_CONNS == 0)
+      return LOG.info('Postpone request for non-multiplexed FastCGI')
+
+    var fcgi_request = pending_requests.shift()
+    if(!fcgi_request)
+      return //LOG.info('No requests to process')
+    else
+      requests_in_flight[fcgi_request.id] = fcgi_request
+
+    var req = fcgi_request.req
+      , res = fcgi_request.res
+
+    var req_url = URL.parse(req.url)
+    var cgi = { 'PATH_INFO': req_url.pathname
               , 'SERVER_NAME': server_addr || 'unknown'
               , 'SERVER_PORT': port
               , 'SERVER_PROTOCOL': 'HTTP/1.1'
@@ -148,7 +170,7 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     })
 
     cgi.REQUEST_METHOD = req.method
-    cgi.QUERY_STRING = req.url.query || ''
+    cgi.QUERY_STRING = req_url.query || ''
     if('content-length' in req.headers)
       cgi.CONTENT_LENGTH = req.headers['content-length']
     if('content-type' in req.headers)
@@ -158,31 +180,29 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
 
     //LOG.info('CGI: %j', cgi)
 
-    var params = []
-    Object.keys(cgi).forEach(function(key) {
-      params.push([key, cgi[key]])
-    })
+    var params = Object.keys(cgi).map(function(key) { return [key, cgi[key]] })
 
     // Write the request to FastCGI.
+    LOG.info('Write request %d to FastCGI: %j', fcgi_request.id, req.url)
     var writer = new FCGI.writer
     writer.encoding = 'binary'
 
     // Begin
     writer.writeHeader({ 'version' : FCGI.constants.version
                        , 'type'    : FCGI.constants.record.FCGI_BEGIN
-                       , 'recordId': request_id
+                       , 'recordId': fcgi_request.id
                        , 'contentLength': 8
                        , 'paddingLength': 0
                        })
     writer.writeBegin({ 'role': FCGI.constants.role.FCGI_RESPONDER
-                      , 'flags': FCGI.constants.keepalive.OFF
+                      , 'flags': fcgi_request.keepalive
                       })
     socket.write(writer.tobuffer())
 
     // Parameters
     writer.writeHeader({ 'version' : FCGI.constants.version
                        , 'type'    : FCGI.constants.record.FCGI_PARAMS
-                       , 'recordId': request_id
+                       , 'recordId': fcgi_request.id
                        , 'contentLength': FCGI.getParamLength(params)
                        , 'paddingLength': 0
                        })
@@ -192,7 +212,7 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     // End parameters
     writer.writeHeader({ 'version' : FCGI.constants.version
                        , 'type'    : FCGI.constants.record.FCGI_PARAMS
-                       , 'recordId': request_id
+                       , 'recordId': fcgi_request.id
                        , 'contentLength': 0
                        , 'paddingLength': 0
                        })
@@ -201,19 +221,54 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     // STDIN
     writer.writeHeader({ 'version' : FCGI.constants.version
                        , 'type'    : FCGI.constants.record.FCGI_STDIN
-                       , 'recordId': request_id
+                       , 'recordId': fcgi_request.id
                        , 'contentLength': 0
                        , 'paddingLength': 0
                        })
     socket.write(writer.tobuffer())
+
+    // At this point the request can be considered sent to the server, and it would be dangerous to re-send without knowing
+    // more details.
+    console.log('Sent request %d: %s', fcgi_request.id, fcgi_request.req.url)
+    fcgi_request.sent = true
   }
 
   function prep_socket() {
     socket.on('data', on_data)
     socket.on('end', on_end)
+    process_request()
   }
 
   function on_end() {
+    LOG.info('FastCGI socket closed')
+    socket = null
+
+    var in_flight_ids = Object.keys(requests_in_flight)
+      , aborts = []
+
+    in_flight_ids.forEach(function(in_flight_id) {
+      var request_in_flight = requests_in_flight[in_flight_id]
+      delete requests_in_flight[in_flight_id]
+
+      if(request_in_flight.sent && request_in_flight.req.method != 'GET')
+        aborts.push(request_in_flight)
+      else {
+        // This can be retried when FastCGI comes back on-line.
+        if(request_in_flight.sent && request_in_flight.req.method == 'GET')
+          LOG.info('Schedule retry GET request %d', request_in_flight.id)
+        request_in_flight.sent = false
+        pending_requests.unshift(request_in_flight)
+      }
+    })
+
+    if(aborts.length) {
+      LOG.warn('FastCGI socket closed with %d in-flight requests sent', aborts.length)
+      aborts.forEach(function(aborted_request) {
+        LOG.warn('  Req %d: %s', aborted_request.id, aborted_request.req.url)
+        aborted_request.res.end()
+      })
+    }
+
     connect_fcgi(socket_path, 0, function(er, new_socket) {
       if(er)
         throw er // TODO
@@ -248,10 +303,12 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
   function on_record(record) {
     var parser = this
 
+    LOG.info('Record %s for %s', record.header.type, record.header.recordId)
+
     record.bodies = parser.bodies
     parser.bodies = null
     record.body_utf8 = function() {
-      return this.bodies
+      return (this.bodies || [])
                  .map(function(data) { return data.toString() })
                  .join('')
     }
@@ -260,9 +317,9 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     if(req_id == 0)
       return LOG.info('Ignoring management record: %j', record)
 
-    var request = requests[req_id]
+    var request = requests_in_flight[req_id]
     if(!request)
-      throw new Error('Record for unknown request: ' + req_id) // TODO
+      return LOG.error('Record for unknown request: %s\n%s', req_id, util.inspect(request))
 
     if(record.header.type == FCGI.constants.record.FCGI_STDERR)
       return LOG.error('Error: %s', record.body_utf8().trim())
@@ -276,7 +333,14 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
     }
 
     else if(record.header.type == FCGI.constants.record.FCGI_END) {
-      return request.res.end()
+      request.res.end()
+      LOG.info('%s %s %d', request.req.method, request.req.url, request.status)
+      delete requests_in_flight[req_id]
+
+      if(request.keepalive == FCGI.constants.keepalive.ON)
+        process_request() // If there are more in the queue, get to them now.
+      else
+        socket.end()
     }
 
     else {
@@ -313,6 +377,7 @@ function fcgi_handler(port, server_addr, socket, socket_path) {
           headers[key] = match[2]
       })
 
+      delete headers['accept-encoding']
       request.res.writeHead(request.status, headers)
     }
 
@@ -358,5 +423,13 @@ function connect_fcgi(socket, attempts, callback) {
   }
 }
 
+//
+// Utilities
+//
+
+function num_or_str(value) {
+  var num_value = +value
+  return isNaN(num_value) ? value : num_value
+}
 
 }) // defaultable
