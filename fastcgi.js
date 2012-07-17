@@ -289,7 +289,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
 
   function on_data(data) {
     var parser = new FCGI.parser
-    parser.bodies = null
+    parser.bodies = []
     parser.encoding = 'binary'
     parser.onBody   = on_body
     parser.onRecord = on_record
@@ -304,19 +304,18 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
 
   function on_body(data, start, end) {
     data = data.slice(start, end)
-    this.bodies = this.bodies || []
     this.bodies.push(data)
   }
 
+  // Handle incoming responder records.
   function on_record(record) {
     var parser = this
-
-    LOG.info('Record %s for %s', record.header.type, record.header.recordId)
+    LOG.info('Record %s: %s', RECORD_NAMES[record.header.type], record.header.recordId)
 
     record.bodies = parser.bodies
-    parser.bodies = null
+    parser.bodies = []
     record.body_utf8 = function() {
-      return (this.bodies || [])
+      return this.bodies
                  .map(function(data) { return data.toString() })
                  .join('')
     }
@@ -333,9 +332,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
       return LOG.error('Error: %s', record.body_utf8().trim())
 
     else if(record.header.type == FCGI.constants.record.FCGI_STDOUT) {
-      if(!record.bodies)
-        return
-
       request.stdout = request.stdout.concat(record.bodies)
       return send_stdout(request)
     }
@@ -362,17 +358,20 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
 
   function send_stdout(request) {
     if(!request.status) {
-      // Still looking for the headers and status.
-      // TODO: I believe there is a bug here, if the headers aren't completely defined in the first data chunk.
-      // The problem is, I don't want to get a chunk that has utf8 headers, then two newlines, then binary body.
-      var parts = request.stdout[0].toString().split(/\r?\n\r?\n/)
-      if(parts.length < 2)
-        return LOG.warn('No complete headers in first stdout chunk') // Still waiting for all headers to arrive.
+      LOG.log('Look for headers and status: %d', request.id)
 
-      // Headers have arrived. Convert the first stdout chunk into a .writeHead() and do not explicitly .write() it.
-      request.stdout = request.stdout.slice(1)
-      var headers_section = parts[0]
-      var lines = headers_section.split(/\r?\n/)
+      var data_so_far = Buffer.concat(request.stdout)
+        , header_break = find_header_break(data_so_far)
+      LOG.log('  %d bytes so far, break: %j', data_so_far.length, header_break)
+
+      if(!header_break)
+        return LOG.log('  No complete headers yet in stdout') // Still waiting for all headers to arrive.
+
+      // Headers have arrived. Convert them into a .writeHead() and only write subsequent data.
+      request.stdout = [ data_so_far.slice(header_break.end, data_so_far.length) ]
+
+      var headers_section = data_so_far.slice(0, header_break.start).toString('utf8')
+        , lines = headers_section.split(/\r?\n/)
         , headers = {}
 
       lines.forEach(function(line) {
