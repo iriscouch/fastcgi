@@ -26,6 +26,8 @@ var util = require('util')
 var http = require('http')
 var FCGI = require('fastcgi-parser')
 
+var FastCGIStream = require('./stream')
+
 var LOG = DEFS.log
 
 module.exports = { 'httpd': httpd
@@ -122,6 +124,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   var request_id = 0
     , requests_in_flight = {}
     , pending_requests = []
+    , fcgi_stream = null
 
   prep_socket()
   return on_request
@@ -234,8 +237,11 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   }
 
   function prep_socket() {
-    socket.on('data', on_data)
-    socket.on('end', on_end)
+    fcgi_stream = new FastCGIStream
+    fcgi_stream.on('data', on_data)
+    fcgi_stream.on('end', on_end)
+
+    socket.pipe(fcgi_stream)
     process_request()
   }
 
