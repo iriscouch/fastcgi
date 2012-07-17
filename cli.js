@@ -8,6 +8,7 @@ var child_process = require('child_process')
 
 var fastcgi = require('./fastcgi')
 
+var LOG = console
 var ARGV = null, OPTS = null
 if(require.main === module)
   main(get_argv())
@@ -25,26 +26,26 @@ function main() {
   else {
     var http_timer = setTimeout(begin_http, 250)
 
-    console.log('Run: %j %j', command, args)
+    LOG.log('Run: %j %j', command, args)
     var child = child_process.spawn(command, args, options)
 
     child.stderr.setEncoding('utf8')
     child.stdout.setEncoding('utf8')
 
     child.stdout.on('data', function(data) {
-      console.log('STDOUT: %j', data)
+      LOG.log('STDOUT: %j', data)
     })
 
     child.stderr.on('data', function(data) {
       if (/^execvp\(\)/.test(data))
-        return console.error('Failed to start child process')
+        return LOG.error('Failed to start child process')
 
-      console.log('STDERR: %j', data)
+      LOG.log('STDERR: %j', data)
     })
 
     child.on('exit', function(code) {
       clearTimeout(http_timer)
-      console.log('Exit %j: %d', command, code)
+      LOG.log('Exit %j: %d', command, code)
     })
   }
 
@@ -53,7 +54,7 @@ function main() {
       if(er)
         throw er
 
-      console.log('Listening on 0.0.0.0:%d', ARGV.port)
+      LOG.log('Listening on 0.0.0.0:%d', ARGV.port)
     })
   }
 }
@@ -82,8 +83,8 @@ function usage(code) {
   OPTS.showHelp(function(lines) {
     lines.split(/\n/).forEach(function(line) {
       code > 0
-        ? console.error(line)
-        : console.log(line)
+        ? LOG.error(line)
+        : LOG.log(line)
     })
   })
 
