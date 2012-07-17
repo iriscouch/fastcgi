@@ -34,6 +34,7 @@ module.exports = { 'httpd': httpd
                  , 'find_header_break': find_header_break
                  }
 
+var RECORD_NAMES = learn_record_names()
 
 // Connect to a FastCGI service and run an HTTP front-end sending all requests to it.
 function httpd(port, host, socket_path, callback) {
@@ -437,6 +438,15 @@ function connect_fcgi(socket, attempts, callback) {
 function num_or_str(value) {
   var num_value = +value
   return isNaN(num_value) ? value : num_value
+}
+
+function learn_record_names() {
+  var types = {}
+  Object.keys(FCGI.constants.record).forEach(function(name) {
+    var value = FCGI.constants.record[name]
+    types[value] = name
+  })
+  return types
 }
 
 function find_header_break(data) {
