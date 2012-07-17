@@ -31,6 +31,7 @@ var FastCGIStream = require('./stream')
 var LOG = DEFS.log
 
 module.exports = { 'httpd': httpd
+                 , 'find_header_break': find_header_break
                  }
 
 
@@ -436,6 +437,20 @@ function connect_fcgi(socket, attempts, callback) {
 function num_or_str(value) {
   var num_value = +value
   return isNaN(num_value) ? value : num_value
+}
+
+function find_header_break(data) {
+  var unix = new Buffer('\n\n')
+    , inet = new Buffer('\r\n\r\n')
+
+  for(var i = 0; i+2 <= data.length; i++) {
+    if(data[i] == unix[0] && data[i+1] == unix[1])
+      return {'start':i, 'end':i+2}
+    if(data[i] == inet[0] && data[i+1] == inet[1] && data[i+2] == inet[2] && data[i+3] == inet[3])
+      return {'start':i, 'end':i+4}
+  }
+
+  return null
 }
 
 }) // defaultable
