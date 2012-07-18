@@ -2,7 +2,9 @@
 //
 // FastCGI web server
 
+var fs = require('fs')
 var util = require('util')
+var daemon = require('daemon')
 var optimist = require('optimist')
 var child_process = require('child_process')
 
@@ -10,6 +12,10 @@ var fastcgi = require('./fastcgi')
 
 var LOG = console
 var ARGV = null, OPTS = null
+
+var IS_FIRST_TICK = true
+process.nextTick(function() { IS_FIRST_TICK = false })
+
 if(require.main === module)
   main(get_argv())
 
@@ -17,9 +23,15 @@ function main() {
   if(ARGV.help)
     return usage()
 
+  if(ARGV.daemon && !ARGV.log)
+    return usage()
+
   var command = ARGV._[0]
     , args    = ARGV._.slice(1)
     , options = {}
+
+  if(ARGV.daemon)
+    daemonize()
 
   if(!command)
     begin_http()
@@ -62,18 +74,52 @@ function main() {
   }
 }
 
+function daemonize() {
+  if(! IS_FIRST_TICK)
+    throw new Error('Too late to daemonize Node.js')
+
+  var message = 'Daemonize, log at ' + ARGV.log
+  if(ARGV.lock)
+    message += '; lock at ' + ARGV.lock
+  LOG.info(message)
+
+  var pid = daemon.start(ARGV.log)
+  LOG.log('pid is %d', pid)
+
+  if(ARGV.lock) {
+    var is_locked = daemon.lock(ARGV.lock)
+    if(!is_locked)
+      throw new Error('Failed to lock file: ' + ARGV.lock)
+  }
+}
+
+function undaemonize(callback) {
+  if(ARGV.lock)
+    fs.unlink(ARGV.lock, function(er) {
+      if(er)
+        LOG.error('Failed to clean lock file %j: %s', ARGV.lock, er.message)
+      else
+        LOG.log('Cleaned pid file: %s', ARGV.lock)
+
+      return callback(er)
+    })
+}
+
 //
 // Utilities
 //
 
 function get_argv() {
-  OPTS = optimist.boolean(['die'])
+  OPTS = optimist.boolean(['die', 'daemon'])
                  .demand(['port', 'socket'])
                  .default({ 'max': 25
                          })
                  .describe({ 'die': 'Exit after serving one request'
+                           , 'log': 'Path to log file'
                            , 'port': 'Listening port number'
                            , 'max': 'Maximum allowed subprocesses'
+                           , 'daemon': 'Daemonize (run in the background); requires --log'
+                           , 'lock': 'Lockfile to use when daemonizing'
                            , 'socket': 'Unix socket FastCGI program will use'
                           })
                  .usage('Usage: $0 [options] <FastCGI program> [program arg1] [arg2] [...]')
