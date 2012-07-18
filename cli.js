@@ -52,6 +52,7 @@ function main() {
   }
 
   function begin_http() {
+    LOG.log('Sending http requests to %s', ARGV.socket)
     fastcgi.httpd(ARGV.port, '0.0.0.0', ARGV.socket, function(er) {
       if(er)
         throw er
