@@ -40,7 +40,9 @@ function main() {
       if (/^execvp\(\)/.test(data))
         return LOG.error('Failed to start child process')
 
-      LOG.log('STDERR: %j', data)
+      data.split(/\n/).forEach(function(line) {
+        LOG.log('STDERR: %s', line)
+      })
     })
 
     child.on('exit', function(code) {
