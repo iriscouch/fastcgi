@@ -61,6 +61,24 @@ function main() {
       clearTimeout(http_timer)
       LOG.log('Exit %j: %d', command, code)
     })
+
+    process.on('SIGINT', die)
+    process.on('SIGTERM', die)
+    function die() {
+      LOG.info('Exit; killing child at %d', child.pid)
+      child.kill('SIGTERM')
+
+      if(ARGV.daemon)
+        undaemonize(finished)
+      else
+        finished()
+
+      function finished(er) {
+        if(er)
+          throw er
+        process.exit(0)
+      }
+    }
   }
 
   function begin_http() {
