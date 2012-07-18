@@ -9,7 +9,8 @@
 , "main": "./fastcgi.js"
 , "bin": "./cli.js"
 
-, "dependencies": { "optimist": "~0.3.4"
+, "dependencies": { "daemon": "~0.5.1"
+                  , "optimist": "~0.3.4"
                   , "defaultable": "~0.7.2"
                   , "fastcgi-parser": "~0.1.5"
                   }
