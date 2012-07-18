@@ -83,7 +83,7 @@ FastCGIStream.prototype.resume = function() {
 FastCGIStream.prototype.write = function(data, encoding) {
   var self = this
 
-  self.log.log('write: %s', data ? data.length : 'null')
+  //self.log.log('write: %s', data ? data.length : 'null')
   if(data)
     self.pending_data.push(data)
   self.build_record()

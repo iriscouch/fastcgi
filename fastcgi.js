@@ -132,7 +132,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   return on_request
 
   function on_request(req, res) {
-    LOG.info('Request: %j', req.url)
+    //LOG.info('Request: %j', req.url)
     request_id += 1
     var fcgi_request = { 'id': request_id
                        , 'req': req
@@ -147,10 +147,10 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
 
   function process_request() {
     if(!socket)
-      return LOG.info('Postpone request until FastCGI is back up')
+      return //LOG.info('Postpone request until FastCGI is back up')
 
     if(Object.keys(requests_in_flight).length && features.FCGI_MPXS_CONNS == 0)
-      return LOG.info('Postpone request for non-multiplexed FastCGI')
+      return //LOG.info('Postpone request for non-multiplexed FastCGI')
 
     var fcgi_request = pending_requests.shift()
     if(!fcgi_request)
@@ -188,7 +188,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     var params = Object.keys(cgi).map(function(key) { return [key, cgi[key]] })
 
     // Write the request to FastCGI.
-    LOG.info('Write request %d to FastCGI: %j', fcgi_request.id, req.url)
+    //LOG.info('Write request %d to FastCGI: %j', fcgi_request.id, req.url)
     var writer = new FCGI.writer
     writer.encoding = 'binary'
 
@@ -234,7 +234,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
 
     // At this point the request can be considered sent to the server, and it would be dangerous to re-send without knowing
     // more details.
-    console.log('Sent request %d: %s', fcgi_request.id, fcgi_request.req.url)
+    //console.log('Sent request %d: %s', fcgi_request.id, fcgi_request.req.url)
     fcgi_request.sent = true
   }
 
@@ -248,7 +248,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   }
 
   function on_end() {
-    LOG.info('FastCGI socket closed')
+    //LOG.info('FastCGI socket closed')
     socket = null
 
     var in_flight_ids = Object.keys(requests_in_flight)
@@ -281,7 +281,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
       if(er)
         throw er // TODO
 
-      LOG.info('Reconnected: %s', socket_path)
+      //LOG.info('Reconnected: %s', socket_path)
       socket = new_socket
       prep_socket()
     })
@@ -310,7 +310,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   // Handle incoming responder records.
   function on_record(record) {
     var parser = this
-    LOG.info('Record %s: %s', RECORD_NAMES[record.header.type], record.header.recordId)
+    //LOG.info('Record %s: %s', RECORD_NAMES[record.header.type], record.header.recordId)
 
     record.bodies = parser.bodies
     parser.bodies = []
@@ -358,11 +358,11 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
 
   function send_stdout(request) {
     if(!request.status) {
-      LOG.log('Look for headers and status: %d', request.id)
+      //LOG.log('Look for headers and status: %d', request.id)
 
       var data_so_far = Buffer.concat(request.stdout)
         , header_break = find_header_break(data_so_far)
-      LOG.log('  %d bytes so far, break: %j', data_so_far.length, header_break)
+      //LOG.log('  %d bytes so far, break: %j', data_so_far.length, header_break)
 
       if(!header_break)
         return LOG.log('  No complete headers yet in stdout') // Still waiting for all headers to arrive.
@@ -406,7 +406,7 @@ function connect_fcgi(socket, attempts, callback) {
   fcgid.on('connect', on_connect)
 
   function on_connect() {
-    LOG.info('Connected to FastCGI daemon: %s', socket)
+    //LOG.info('Connected to FastCGI daemon: %s', socket)
     fcgid.removeListener('error', on_error)
     return callback(null, fcgid)
   }
