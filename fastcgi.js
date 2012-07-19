@@ -179,7 +179,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     if('content-length' in req.headers)
       cgi.CONTENT_LENGTH = req.headers['content-length']
     if('content-type' in req.headers)
-      cgi.CONTENT_LENGTH = req.headers['content-type']
+      cgi.CONTENT_TYPE = req.headers['content-type']
     if('authorization' in req.headers)
       cgi.AUTH_TYPE = req.headers.authorization.split(/ /)[0]
 
