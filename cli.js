@@ -45,7 +45,9 @@ function main() {
     child.stdout.setEncoding('utf8')
 
     child.stdout.on('data', function(data) {
-      LOG.log('STDOUT: %j', data)
+      data.split(/\n/).forEach(function(line) {
+        LOG.log('STDOUT: %s', line)
+      })
     })
 
     child.stderr.on('data', function(data) {
