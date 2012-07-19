@@ -1,0 +1,3 @@
+node_modules/daemon/.lock-wscript
+node_modules/daemon/build
+node_modules/daemon/lib/daemon.*
