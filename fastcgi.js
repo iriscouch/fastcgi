@@ -226,18 +226,39 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     socket.write(writer.tobuffer())
 
     // STDIN
-    writer.writeHeader({ 'version' : FCGI.constants.version
-                       , 'type'    : FCGI.constants.record.FCGI_STDIN
-                       , 'recordId': fcgi_request.id
-                       , 'contentLength': 0
-                       , 'paddingLength': 0
-                       })
-    socket.write(writer.tobuffer())
+    if(req.method != 'PUT' && req.method != 'POST')
+      end_request()
+    else {
+      req.on('data', function(chunk) {
+        writer.writeHeader({ 'version' : FCGI.constants.version
+                           , 'type'    : FCGI.constants.record.FCGI_STDIN
+                           , 'recordId': fcgi_request.id
+                           , 'contentLength': chunk.length
+                           , 'paddingLength': 0
+                           })
+        writer.writeBody(chunk)
 
-    // At this point the request can be considered sent to the server, and it would be dangerous to re-send without knowing
-    // more details.
-    //console.log('Sent request %d: %s', fcgi_request.id, fcgi_request.req.url)
-    fcgi_request.sent = true
+        var data = writer.tobuffer()
+        socket.write(data)
+      })
+
+      req.on('end', end_request)
+    }
+
+    function end_request() {
+      writer.writeHeader({ 'version' : FCGI.constants.version
+                         , 'type'    : FCGI.constants.record.FCGI_STDIN
+                         , 'recordId': fcgi_request.id
+                         , 'contentLength': 0
+                         , 'paddingLength': 0
+                         })
+      socket.write(writer.tobuffer())
+
+      // At this point the request can be considered sent to the server, and it would be dangerous to re-send without knowing
+      // more details.
+      //console.log('Sent request %d: %s', fcgi_request.id, fcgi_request.req.url)
+      fcgi_request.sent = true
+    }
   }
 
   function prep_socket() {
