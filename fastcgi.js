@@ -183,9 +183,11 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     if('authorization' in req.headers)
       cgi.AUTH_TYPE = req.headers.authorization.split(/ /)[0]
 
-    //LOG.info('CGI: %j', cgi)
 
     var params = Object.keys(cgi).map(function(key) { return [key, cgi[key]] })
+    params.forEach(function(param) {
+      //console.log('  Param: %s = %j', param[0], param[1])
+    })
 
     // Write the request to FastCGI.
     //LOG.info('Write request %d to FastCGI: %j', fcgi_request.id, req.url)
