@@ -1,7 +1,7 @@
 { "name": "fastcgi"
 , "description": "Simple, robust node.js web server that runs FastCGI applications"
 , "keywords": [ "fastcgi", "http" ]
-, "version": "0.1.0"
+, "version": "0.1.1"
 , "author": "Jason Smith <jhs@iriscouch.com> (http://www.iriscouch.com)"
 , "repository": { "type":"git", "url":"https://github.com/iriscouch/fastcgi" }
 
