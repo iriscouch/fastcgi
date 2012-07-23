@@ -5,12 +5,11 @@
 , "author": "Jason Smith <jhs@iriscouch.com> (http://www.iriscouch.com)"
 , "repository": { "type":"git", "url":"https://github.com/iriscouch/fastcgi" }
 
-, "engines": { "node": "0.8" }
+, "engines": { "node": ">= 0.8" }
 , "main": "./fastcgi.js"
 , "bin": "./cli.js"
 
-, "dependencies": { "daemon": "~0.5.1"
-                  , "optimist": "~0.3.4"
+, "dependencies": { "optimist": "~0.3.4"
                   , "defaultable": "~0.7.2"
                   , "fastcgi-parser": "~0.1.5"
                   }
