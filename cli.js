@@ -4,7 +4,7 @@
 
 var fs = require('fs')
 var util = require('util')
-var daemon = require('daemon')
+var path = require('path')
 var optimist = require('optimist')
 var child_process = require('child_process')
 
@@ -12,9 +12,6 @@ var fastcgi = require('./fastcgi')
 
 var LOG = console
 var ARGV = null, OPTS = null
-
-var IS_FIRST_TICK = true
-process.nextTick(function() { IS_FIRST_TICK = false })
 
 if(require.main === module)
   main(get_argv())
@@ -24,14 +21,25 @@ function main() {
     return usage()
 
   if(ARGV.daemon && !ARGV.log)
-    return usage()
+    return usage('log')
+  if(ARGV.daemon && !ARGV.pidfile)
+    return usage('pidfile')
+
+  if(ARGV.daemon)
+    return daemonize()
+  else if(ARGV.parent)
+    childize(init)
+  else
+    init()
+}
+
+function init(er) {
+  if(er)
+    throw er
 
   var command = ARGV._[0]
     , args    = ARGV._.slice(1)
     , options = {}
-
-  if(ARGV.daemon)
-    daemonize()
 
   if(!command)
     begin_http()
@@ -95,31 +103,101 @@ function main() {
 }
 
 function daemonize() {
-  if(! IS_FIRST_TICK)
-    throw new Error('Too late to daemonize Node.js')
+  LOG.info('Daemonize, log at %s; pid at %s', ARGV.log, ARGV.pidfile)
 
-  var message = 'Daemonize, log at ' + ARGV.log
-  if(ARGV.lock)
-    message += '; lock at ' + ARGV.lock
-  LOG.info(message)
+  // Do a poor-man's exclusive open of the PID file, while the console is still conveniently available.
+  var pidfile = fs.createReadStream(ARGV.pidfile, {'encoding':'utf8'})
 
-  var pid = daemon.start(ARGV.log)
-  LOG.log('pid is %d', pid)
+  pidfile.on('open', function(fd) {
+    // Daemonization cannot continue with a PID file in place.
+    var data = ''
+    pidfile.on('error', function(er) { throw er })
+    pidfile.on('data', function(chunk) {
+      data += chunk
+      if(data.length > 10)
+        done()
+    })
+    pidfile.on('end', done)
 
-  if(ARGV.lock) {
-    var is_locked = daemon.lock(ARGV.lock)
-    if(!is_locked)
-      throw new Error('Failed to lock file: ' + ARGV.lock)
-  }
+    function done() {
+      var pid = +data
+      if(typeof pid != 'number' || isNaN(pid))
+        pid = '(unknown PID)'
+
+      LOG.error('Daemon already running at pid %s', pid)
+      process.exit(1)
+    }
+  })
+
+  pidfile.on('error', function(er) {
+    if(er.code != 'ENOENT')
+      throw er
+
+    // Good. Open the log file and spawn the child. (The child will try an exclusive open too of course.)
+    var log = fs.createWriteStream(ARGV.log, {'flags':'a', 'mode':0600})
+    log.on('error', function(er) {
+      throw er
+    })
+
+    log.on('open', function(fd) {
+      log.write(util.format('%d: Spawn daemon\n', process.pid))
+      spawn(fd)
+    })
+  })
+}
+
+function spawn(new_stdout, new_stderr) {
+  var command = process.argv[0]
+    , opts = {'cwd':'/', 'detached':true, 'stdio':['ignore', new_stdout, new_stderr||new_stdout]}
+
+  var args = process.argv.slice(1)
+    .map(function(arg) {
+      if(arg.match(/^--daemon/))
+        return '--parent=' + process.pid
+      var match = arg.match(/^--(\w+)=(.*)$/)
+        , key = match && match[1]
+        , val = match && match[2]
+      if(key == 'log')
+        return null
+      if(key == 'socket' || key == 'pidfile')
+        return '--' + key + '=' + path.resolve(val)
+      return arg
+    })
+    .filter(function(arg) { return !! arg })
+
+  LOG.info('command: %j', command)
+  LOG.info('args: %j', args)
+  LOG.info('opts: %j', opts)
+
+  var child = child_process.spawn(command, args, opts)
+}
+
+function childize(callback) {
+  process.on('exit', function() { LOG.log('Exit') })
+
+  // Initialize the daemon child.
+  var pidfile = fs.createWriteStream(ARGV.pidfile, {'flags':'wx', 'mode':0640, 'encoding':'utf8'})
+  pidfile.on('error', function(er) {
+    callback(er)
+  })
+
+  pidfile.on('open', function(fd) {
+    pidfile.write(process.pid + '\n')
+    //pidfile.close()
+
+    LOG.info('%d: daemon running', process.pid)
+    setTimeout(callback, 15000)
+    //callback()
+  })
 }
 
 function undaemonize(callback) {
-  if(ARGV.lock)
-    fs.unlink(ARGV.lock, function(er) {
+  if(ARGV.pidfile)
+    fs.unlink(ARGV.pidfile, function(er) {
       if(er)
-        LOG.error('Failed to clean lock file %j: %s', ARGV.lock, er.message)
+        LOG.error('Failed to clean lock file %j: %s', ARGV.pidfile, er.message)
       else
-        LOG.log('Cleaned pid file: %s', ARGV.lock)
+        LOG.log('Cleaned pid file: %s', ARGV.pidfile)
 
       return callback(er)
     })
@@ -138,8 +216,8 @@ function get_argv() {
                            , 'log': 'Path to log file'
                            , 'port': 'Listening port number'
                            , 'max': 'Maximum allowed subprocesses'
-                           , 'daemon': 'Daemonize (run in the background); requires --log'
-                           , 'lock': 'Lockfile to use when daemonizing'
+                           , 'daemon': 'Daemonize (run in the background); requires --log and --pidfile'
+                           , 'pidfile': 'Lockfile to use when daemonizing'
                            , 'socket': 'Unix socket FastCGI program will use'
                           })
                  .usage('Usage: $0 [options] <FastCGI program> [program arg1] [arg2] [...]')
@@ -148,7 +226,12 @@ function get_argv() {
 }
 
 function usage(code) {
-  code = code || 0
+  if(typeof code == 'string') {
+    var needed = code
+    code = 1
+  } else
+    code = code || 0
+
   OPTS.showHelp(function(lines) {
     lines.split(/\n/).forEach(function(line) {
       code > 0
@@ -156,6 +239,9 @@ function usage(code) {
         : LOG.log(line)
     })
   })
+
+  if(needed)
+    LOG.error('Missing required argument: %s', needed)
 
   process.exit(code)
 }
