@@ -148,7 +148,12 @@ function get_argv() {
 }
 
 function usage(code) {
-  code = code || 0
+  if(typeof code == 'string') {
+    var needed = code
+    code = 1
+  } else
+    code = code || 0
+
   OPTS.showHelp(function(lines) {
     lines.split(/\n/).forEach(function(line) {
       code > 0
@@ -156,6 +161,9 @@ function usage(code) {
         : LOG.log(line)
     })
   })
+
+  if(needed)
+    LOG.error('Missing required argument: %s', needed)
 
   process.exit(code)
 }
