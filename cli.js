@@ -72,7 +72,7 @@ function init(er) {
 
   child.on('exit', function(code) {
     clearTimeout(http_timer)
-    LOG.log('Exit %j: %d', command, code)
+    LOG.log('Exit %d: %s %j', code, command, args)
   })
 
   function die() {
