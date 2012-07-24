@@ -123,6 +123,10 @@ function daemonize() {
     })
 
     function done() {
+      if(data == '') {
+        LOG.warn('Overwrite empty PID file: %s', ARGV.pidfile)
+        prep_spawn()
+      }
       var pid = +data
       if(typeof pid != 'number' || isNaN(pid))
         pid = '[unknown]'
@@ -135,7 +139,11 @@ function daemonize() {
   pidfile.on('error', function(er) {
     if(er.code != 'ENOENT')
       throw er
+    else
+      prep_spawn()
+  })
 
+  function prep_spawn() {
     // Good. Open the log file and spawn the child. (The child will try an exclusive open too of course.)
     // Also, it seems as if the child needs two distinct file descriptors. Not sure if that is a bug.
     var log = fs.createWriteStream(ARGV.log, {'flags':'a', 'mode':0600})
@@ -150,7 +158,7 @@ function daemonize() {
         spawn(out_fd, err_fd)
       })
     })
-  })
+  }
 }
 
 function spawn(new_stdout, new_stderr) {
