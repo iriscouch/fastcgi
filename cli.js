@@ -203,15 +203,14 @@ function childize(callback) {
 }
 
 function undaemonize(callback) {
-  if(ARGV.pidfile)
-    fs.unlink(ARGV.pidfile, function(er) {
-      if(er)
-        LOG.error('Failed to clean PID file %j: %s', ARGV.pidfile, er.message)
-      else
-        LOG.log('Cleaned pid file: %s', ARGV.pidfile)
+  fs.unlink(ARGV.pidfile, function(er) {
+    if(er)
+      LOG.error('Failed to clean PID file %j: %s', ARGV.pidfile, er.message)
+    else
+      LOG.log('Cleaned pid file: %s', ARGV.pidfile)
 
-      return callback(er)
-    })
+    return callback(er)
+  })
 }
 
 //
