@@ -1,3 +1,4 @@
+[![build status](https://secure.travis-ci.org/iriscouch/fastcgi.png)](http://travis-ci.org/iriscouch/fastcgi)
 # FastCGI for Node.js
 
 **fastcgi** is an extremely simple web server that serves a FastCGI application.
