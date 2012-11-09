@@ -188,7 +188,7 @@ function spawn(new_stdout, new_stderr) {
 
 function childize(callback) {
   // Initialize the daemon child.
-  var pidfile = fs.createWriteStream(ARGV.pidfile, {'flags':'wx', 'mode':0640, 'encoding':'utf8'})
+  var pidfile = fs.createWriteStream(ARGV.pidfile, {'flags':'w', 'mode':0640, 'encoding':'utf8'})
   pidfile.on('error', function(er) {
     callback(er)
   })
