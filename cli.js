@@ -125,7 +125,7 @@ function daemonize() {
     function done() {
       if(data == '') {
         LOG.warn('Overwrite empty PID file: %s', ARGV.pidfile)
-        prep_spawn()
+        return prep_spawn()
       }
       var pid = +data
       if(typeof pid != 'number' || isNaN(pid))
